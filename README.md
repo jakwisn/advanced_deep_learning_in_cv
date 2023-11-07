@@ -1,7 +1,7 @@
 # TODO List 
 
 ## Week 1 
-* [ ] create dataloader 
+* [X] create dataloader 
 * [X] design transformations that are consistent to train/test images and scale them down/crop to small, consistent image. 
 * [X] create transformations (do not destroy the pictures!)
     * [ ] linear 
