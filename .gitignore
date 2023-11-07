@@ -1,5 +1,9 @@
 data/
 Test.ipynb
+ddpm/results/
+ddpm/runs/
+ddpm/models/
+ddpm/assets/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
