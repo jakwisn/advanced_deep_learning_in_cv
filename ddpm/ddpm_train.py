@@ -12,8 +12,9 @@ import logging
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
-from ddpm import Diffusion
-from model import UNet
+#from ddpm import Diffusion
+from ddpm.ddpm import Diffusion
+from ddpm.model import UNet
 
 SEED = 1
 DATASET_SIZE = 40000
@@ -42,7 +43,7 @@ def save_images(images, path, show=True, title=None, nrow=10):
 def prepare_dataloader(batch_size):
     import torchvision.transforms as transforms
     from torch.utils.data import DataLoader
-    from dataset.sprites_dataset import SpritesDataset
+    from ddpm.dataset.sprites_dataset import SpritesDataset
     transform = transforms.Compose([
     transforms.ToTensor(),                # from [0,255] to range [0.0,1.0]
     transforms.Normalize((0.5,), (0.5,))  # range [-1,1]
@@ -58,11 +59,11 @@ def create_result_folders(experiment_name):
     os.makedirs(os.path.join("models", experiment_name), exist_ok=True)
     os.makedirs(os.path.join("results", experiment_name), exist_ok=True)
 
-def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
+def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
           batch_size=100, lr=1e-3, num_epochs=30, experiment_name="ddpm", show=False):
     """Implements algrorithm 1 (Training) from the ddpm paper at page 4"""
     create_result_folders(experiment_name)
-    dataloader = prepare_dataloader(batch_size)
+    #dataloader = prepare_dataloader(batch_size)
 
     model = UNet(img_size=img_size, c_in=input_channels, c_out=input_channels, 
                  time_dim=time_dim,channels=channels, device=device).to(device)

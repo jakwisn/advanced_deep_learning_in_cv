@@ -11,9 +11,9 @@
     * [ ] linear mapping function (https://www.cs.cityu.edu.hk/~rynson/papers/eccv22b.pdf)
 * [X] ask Morten for tips on aproaching weight initialization in stable diffusion
 ## Week 2 
-* [ ] implement the stable diffuction model (ground up? using some weights?)
+* [X] implement the stable diffuction model (ground up? using some weights?)
 * [ ] pick and create metrics   
-* [ ] try training
+* [X] try training
 
 ## Week 3 
 * [ ] train using different transformations 
