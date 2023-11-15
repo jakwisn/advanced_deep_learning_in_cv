@@ -42,7 +42,7 @@ class Diffusion:
             raise NotImplementedError('Not implemented!')
     
 
-    def q_sample(self, x, t):
+    def q_sample(self, x, t, mask=None):
         """
         x: input image (x0)
         t: timestep: should be torch.tensor
@@ -81,7 +81,7 @@ class Diffusion:
 
         return mean, std
 
-    def p_sample(self, model, x_t, t):
+    def p_sample(self, model, x_t, t, mask=None):
         """
         Sample from p(x{t-1} | x_t) using the reverse process and model
         """

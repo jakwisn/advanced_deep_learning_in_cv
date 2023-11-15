@@ -19,11 +19,6 @@ class CorrectionImageDataset(Dataset):
     def __getitem__(self, idx):
         img_name = self.file_list[idx]
         image = Image.open(img_name)
-        
-        if self.train:
-            transform = A.RandomBrightness(p=1, limit=(0.1,0.1))
-            
-            image = Image.fromarray(np.uint8(transform(image=np.array(image))['image']))
             
         if self.transform:
             image = self.transform(image)
@@ -31,7 +26,9 @@ class CorrectionImageDataset(Dataset):
             image = transforms.ToTensor()(image)  
 
         # Get mask
-        mask = torch.mean(image,0) >= 255 / 255
+        transform = A.RandomBrightness(p=1, limit=(0.05,0.05))
+        bright_image = torch.from_numpy(transform(image=image.numpy())['image'])
+        mask = torch.mean(bright_image,0) >= 255 / 255
         
         # return
         return self.hist_fix(image), mask
