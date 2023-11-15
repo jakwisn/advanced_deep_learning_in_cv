@@ -5,28 +5,36 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import cv2
+import albumentations as A 
 
 class CorrectionImageDataset(Dataset):
-    def __init__(self, file_list, transform=None, return_og=False):
+    def __init__(self, file_list, train,transform=None):
         self.transform = transform
         self.file_list = file_list
-        self.return_og = return_og
+        self.train = train
 
     def __len__(self):
         return len(self.file_list)
 
     def __getitem__(self, idx):
         img_name = self.file_list[idx]
-        image = increase_brightness(Image.open(img_name))
+        image = Image.open(img_name)
+        
+        if self.train:
+            transform = A.RandomBrightness(p=1, limit=(0.1,0.1))
+            
+            image = Image.fromarray(np.uint8(transform(image=np.array(image))['image']))
+            
         if self.transform:
             image = self.transform(image)
         else:
             image = transforms.ToTensor()(image)  
 
-        if self.return_og:
-            return self.hist_fix(image), image
-        else:
-            return self.hist_fix(image)
+        # Get mask
+        mask = torch.mean(image,0) >= 255 / 255
+        
+        # return
+        return self.hist_fix(image), mask
         
     def hist_fix(self, im):
         new_im = im.clone()
