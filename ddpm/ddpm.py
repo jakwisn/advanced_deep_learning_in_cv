@@ -19,7 +19,7 @@ class Diffusion:
         self.device = device
         
         # TASK 1: Implement beta, alpha, and alpha_bar
-        self.betas = self.get_betas('linear').to(device)
+        self.betas = self.get_betas('cosine').to(device)
         self.alphas = 1. - self.betas
         self.alphas_bar = torch.cumprod(self.alphas, dim=0) # cumulative products of alpha 
 
@@ -30,7 +30,14 @@ class Diffusion:
             return torch.linspace(self.beta_start, self.beta_end, self.T)
         # add your own (e.g. cosine)
         elif schedule == 'cosine':
-            return None
+            def f(t):
+                s=0.008
+                return torch.cos((t / self.T + s) / (1 + s) * 0.5 * torch.pi) ** 2
+            x = torch.linspace(0, self.T, self.T + 1)
+            alphas_cumprod = f(x) / f(torch.tensor([0]))
+            betas = 1 - alphas_cumprod[1:] / alphas_cumprod[:-1]
+            betas = torch.clip(betas, 0.0001, 0.999)
+            return betas
         else :
             raise NotImplementedError('Not implemented!')
     

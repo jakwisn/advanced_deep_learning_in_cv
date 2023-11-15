@@ -63,7 +63,9 @@ def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channe
           batch_size=100, lr=1e-3, num_epochs=30, experiment_name="ddpm", show=False):
     """Implements algrorithm 1 (Training) from the ddpm paper at page 4"""
     create_result_folders(experiment_name)
-    #dataloader = prepare_dataloader(batch_size)
+    
+    if not dataloader:
+        dataloader = prepare_dataloader(batch_size)
 
     model = UNet(img_size=img_size, c_in=input_channels, c_out=input_channels, 
                  time_dim=time_dim,channels=channels, device=device).to(device)
@@ -79,8 +81,9 @@ def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channe
         logging.info(f"Starting epoch {epoch}:")
         pbar = tqdm(dataloader)
 
-        for i, images in enumerate(pbar):
+        for i, (images, masks) in enumerate(pbar):
             images = images.to(device)
+            masks = masks.to(device)
 
             # TASK 4: implement the training loop
             t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
@@ -107,7 +110,10 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
     print(f"Model will run on {device}")
     set_seed(seed=SEED)
-    train(device=device)
+    input_images = glob.glob('data/training/INPUT_IMAGES/*P1.5.JPG')
+    train_dataset = CorrectionImageDataset(input_images, train=True, transform=transform)
+    dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    train(dataloader, device=device, T=250, img_size=IM_SIZE, batch_size=BATCH_SIZE)
 
 if __name__ == '__main__':
     main()
