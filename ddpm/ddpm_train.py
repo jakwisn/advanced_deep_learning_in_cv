@@ -84,19 +84,34 @@ def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channe
         for i, (images, masks) in enumerate(pbar):
             images = images.to(device)
             masks = masks.to(device)
-
+            #print("images shape", images.shape)
+            #print("masks shape", masks.shape)
+            #print("masks unsqueezed shape", masks.unsqueeze(1).shape)
             # TASK 4: implement the training loop
             t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
             x_t, noise = diffusion.q_sample(images, t) # inject noise to the images (forward process), HINT: use q_sample
-            predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
-            loss = mse(noise, predicted_noise) # loss between noise and predicted noise
-
             
+            #plt.imshow((masks[0] * x_t[0]).permute(1,2,0).cpu().numpy())
+            
+            # Check x_t and noise, one should be the image given at t with noise
+            # Apply the mask to this image
+            #print("x_t shape", x_t.shape)
+            #print("noise shape", noise.shape)
+            #torch.mul(X, mask.unsqueeze(-1))
+            known_regions = x_t * ~masks.unsqueeze(1)
+            #print("known regions shape", known_regions.shape)
+            
+            predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
+            #print("predicted noise shape", predicted_noise.shape)
+            # Mask the predicted noise
+            unknown_regions = predicted_noise * masks.unsqueeze(1)
+            
+            loss = mse(noise*masks.unsqueeze(1), unknown_regions) # loss between masked noise and masked predicted noise
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-
+            
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
@@ -104,6 +119,7 @@ def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channe
         save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
                     show=show, title=f'Epoch {epoch}')
         torch.save(model.state_dict(), os.path.join("models", experiment_name, f"weights-{epoch}.pt"))
+        break
 
 
 def main():

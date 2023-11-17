@@ -26,7 +26,7 @@ class CorrectionImageDataset(Dataset):
             image = transforms.ToTensor()(image)  
 
         # Get mask
-        transform = A.RandomBrightness(p=1, limit=(0.05,0.05))
+        transform = A.RandomBrightnessContrast(p=1, brightness_limit=(0.05,0.05))
         bright_image = torch.from_numpy(transform(image=image.numpy())['image'])
         mask = torch.mean(bright_image,0) >= 255 / 255
         
