@@ -53,16 +53,16 @@ class Diffusion:
         Should return q(x_t | x_0), noise
         """
         # TASK 2: Implement the forward process
-        sqrt_alpha_bar =  torch.sqrt(self.alphas_bar).to(self.device) # HINT: use torch.sqrt to calculate the sqrt of alphas_bar at timestep t
+        sqrt_alpha_bar =  torch.sqrt(self.alphas_bar).to(self.device)
         sqrt_alpha_bar = sqrt_alpha_bar[:, None, None, None] # match image dimensions
         
-        sqrt_one_minus_alpha_bar = torch.sqrt(1 - self.alphas_bar).to(self.device) # HINT: calculate the sqrt of 1 - alphas_bar at time step t
-        sqrt_one_minus_alpha_bar = sqrt_one_minus_alpha_bar[:, None, None, None]# match image dimensions
+        sqrt_one_minus_alpha_bar = torch.sqrt(1 - self.alphas_bar).to(self.device)
+        sqrt_one_minus_alpha_bar = sqrt_one_minus_alpha_bar[:, None, None, None]
         
-        noise = torch.normal(0, 1, size=x.size()).to(self.device) # HINT: sample noise from a normal distribution. It should match the shape of x 
+        noise = torch.normal(0, 1, size=x.size()).to(self.device)
         assert noise.shape == x.shape, 'Invalid shape of noise'
         
-        x_noised = sqrt_alpha_bar[t] * x + sqrt_one_minus_alpha_bar[t]*noise # HINT: Create the noisy version of x. See Eq. 4 in the ddpm paper at page 2
+        x_noised = sqrt_alpha_bar[t] * x + sqrt_one_minus_alpha_bar[t]*noise
         return x_noised, noise
     
 
@@ -81,35 +81,46 @@ class Diffusion:
 
         return mean, std
 
-    def p_sample(self, model, x_t, t, mask=None):
+    def p_sample(self, model, x_t, t):
         """
         Sample from p(x{t-1} | x_t) using the reverse process and model
         """
         # TASK 3: implement the reverse process
         mean, std = self.p_mean_std(model, x_t, t)
-        
-        
-        # HINT: Having calculate the mean and std of p(x{x_t} | x_t), we sample noise from a normal distribution.
-        # see line 3 of the Algorithm 2 (Sampling) at page 4 of the ddpm paper.
+
         noise = torch.normal(0, 1, size=x_t.shape).to(self.device) if t[0] > 1 else torch.zeros(size=x_t.shape).to(self.device)
         # Calculate x_{t-1}, see line 4 of the Algorithm 2 (Sampling) at page 4 of the ddpm paper.
-        x_t_prev = 1/torch.sqrt(self.alphas[t]).unique() * (x_t -((1- self.alphas[t]) / torch.sqrt(1-self.alphas_bar[t])).unique() * model(x_t, t)) +  std*noise
+        # betas here? # TODO
+
+        x_t_prev = 1/torch.sqrt(self.alphas[t]).view(x_t.shape[0], 1, 1, 1) * (x_t -((1- self.alphas[t]) / torch.sqrt(1-self.alphas_bar[t])).view(x_t.shape[0], 1, 1, 1) * model(x_t, t)) +  std*noise
         return x_t_prev
 
 
-    def p_sample_loop(self, model, batch_size, timesteps_to_save=None):
+    def p_sample_loop(self, images, masks, model, batch_size , timesteps_to_save=None):
         """
         Implements algrorithm 2 (Sampling) from the ddpm paper at page 4
+
+        # xq is an reverse masked image from q sample
         """
         logging.info(f"Sampling {batch_size} new images....")
         model.eval()
         if timesteps_to_save is not None:
             intermediates = []
         with torch.no_grad():
-            x = torch.randn((batch_size, 3, self.img_size, self.img_size)).to(self.device)
+            x = torch.randn((batch_size, 3, self.img_size, self.img_size)).to(self.device) # Xt ~ N(0,1)
+
             for i in tqdm(reversed(range(1, self.T)), position=0, total=self.T-1):
                 t = (torch.ones(batch_size) * i).long().to(self.device)
-                x = self.p_sample(model, x, t)
+
+                known, _ = self.q_sample(images, t)
+                knonw_regions = known * ~ masks.unsqueeze(1)
+
+
+                x = self.p_sample(model, x, t) # sample from p(x_{t-1} | x_t) - here the previous iteration goes
+                unknown_regions = x * masks.unsqueeze(1)  # mask the image and add the known regions
+                x = knonw_regions + unknown_regions # add the known regions to the unknown regions
+
+
                 if timesteps_to_save is not None and i in timesteps_to_save:
                     x_itermediate = (x.clamp(-1, 1) + 1) / 2
                     x_itermediate = (x_itermediate * 255).type(torch.uint8)

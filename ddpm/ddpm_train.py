@@ -59,7 +59,7 @@ def create_result_folders(experiment_name):
     os.makedirs(os.path.join("models", experiment_name), exist_ok=True)
     os.makedirs(os.path.join("results", experiment_name), exist_ok=True)
 
-def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
+def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
           batch_size=100, lr=1e-3, num_epochs=30, experiment_name="ddpm", show=False):
     """Implements algrorithm 1 (Training) from the ddpm paper at page 4"""
     create_result_folders(experiment_name)
@@ -81,45 +81,45 @@ def train(dataloader, device='cpu', T=500, img_size=16, input_channels=3, channe
         logging.info(f"Starting epoch {epoch}:")
         pbar = tqdm(dataloader)
 
-        for i, (images, masks) in enumerate(pbar):
-            images = images.to(device)
-            masks = masks.to(device)
-            #print("images shape", images.shape)
-            #print("masks shape", masks.shape)
-            #print("masks unsqueezed shape", masks.unsqueeze(1).shape)
-            # TASK 4: implement the training loop
-            t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
-            x_t, noise = diffusion.q_sample(images, t) # inject noise to the images (forward process), HINT: use q_sample
-            
-            #plt.imshow((masks[0] * x_t[0]).permute(1,2,0).cpu().numpy())
-            
-            # Check x_t and noise, one should be the image given at t with noise
-            # Apply the mask to this image
-            #print("x_t shape", x_t.shape)
-            #print("noise shape", noise.shape)
-            #torch.mul(X, mask.unsqueeze(-1))
-            known_regions = x_t * ~masks.unsqueeze(1)
-            #print("known regions shape", known_regions.shape)
-            
-            predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
-            #print("predicted noise shape", predicted_noise.shape)
-            # Mask the predicted noise
-            unknown_regions = predicted_noise * masks.unsqueeze(1)
-            
-            loss = mse(noise*masks.unsqueeze(1), unknown_regions) # loss between masked noise and masked predicted noise
+        with torch.enable_grad():
+            for i, (images, masks) in enumerate(pbar):
+                images = images.to(device)
+                masks = masks.to(device)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            pbar.set_postfix(MSE=loss.item())
-            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+                t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
 
-        sampled_images = diffusion.p_sample_loop(model, batch_size=images.shape[0])
-        save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
-                    show=show, title=f'Epoch {epoch}')
+                # q sample does is done just like before
+                x_t, noise = diffusion.q_sample(images, t)
+
+                known_regions = x_t * ~masks.unsqueeze(1)
+                x_p = diffusion.p_sample(model, x_t, t)
+                unknown_regions = x_p * masks.unsqueeze(1)
+
+                x_t = known_regions + unknown_regions
+
+                predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
+
+                unknown_regions = predicted_noise * masks.unsqueeze(1)
+
+                loss = mse(noise*masks.unsqueeze(1), unknown_regions) # loss between masked noise and masked predicted noise
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                pbar.set_postfix(MSE=loss.item())
+                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+
+        with torch.no_grad():
+            pbar = tqdm(valdataloader)
+            for i, (images, masks) in enumerate(pbar):
+                images = images.to(device)
+                masks = masks.to(device)
+            sampled_images = diffusion.p_sample_loop(images, masks, model,  batch_size=images.shape[0])
+            save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
+                        show=show, title=f'Epoch {epoch}')
+
         torch.save(model.state_dict(), os.path.join("models", experiment_name, f"weights-{epoch}.pt"))
-        break
 
 
 def main():
