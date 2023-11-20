@@ -70,7 +70,9 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
     model = UNet(img_size=img_size, c_in=input_channels, c_out=input_channels, 
                  time_dim=time_dim,channels=channels, device=device).to(device)
     diffusion = Diffusion(img_size=img_size, T=T, beta_start=1e-4, beta_end=0.02, device=device)
-
+    
+    ckpt = torch.load("checkpoints/unconditional_ckpt.pt")
+    model.load_state_dict(ckpt)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
     mse = torch.nn.MSELoss() # use MSE loss 
     

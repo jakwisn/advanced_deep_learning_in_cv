@@ -9,6 +9,7 @@ ddpm/dataset/
 runs/
 results/
 models/
+checkpoints/*.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
