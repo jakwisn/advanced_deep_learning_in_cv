@@ -15,6 +15,7 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=log
 #from ddpm import Diffusion
 from ddpm.ddpm import Diffusion
 from ddpm.model import UNet
+from loss import MaskedMSELoss
 
 SEED = 1
 DATASET_SIZE = 40000
@@ -74,14 +75,16 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
     ckpt = torch.load("checkpoints/unconditional_ckpt.pt")
     model.load_state_dict(ckpt)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    mse = torch.nn.MSELoss() # use MSE loss 
+    #loss_fn = torch.nn.MSELoss() # use MSE loss 
+    loss_fn = MaskedMSELoss()
     
     logger = SummaryWriter(os.path.join("runs", experiment_name))
     l = len(dataloader)
-
+    MAX_STEPS = 150
     for epoch in range(1, num_epochs + 1):
         logging.info(f"Starting epoch {epoch}:")
-        pbar = tqdm(dataloader)
+        
+        pbar = tqdm(dataloader, total=MAX_STEPS)
 
         with torch.enable_grad():
             for i, (images, masks) in enumerate(pbar):
@@ -103,14 +106,17 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
                 predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
                 unknown_regions = predicted_noise * masks
 
-                loss = mse(noise*masks, unknown_regions) # loss between masked noise and masked predicted noise
+                loss = loss_fn(noise, unknown_regions, masks) # loss between masked noise and masked predicted noise
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                pbar.set_postfix(MSE=loss.item())
-                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+                pbar.set_postfix(Loss=loss.item())
+                logger.add_scalar("Loss", loss.item(), global_step=epoch * l + i)
+                
+                if i >= MAX_STEPS:
+                    break
              
         with torch.no_grad():
             pbar = tqdm(valdataloader)
