@@ -1,6 +1,6 @@
 # Advanced Deep learning in Computer Vision 
 
-![poster](https://github.com/jakwisn/DTU-Advanced-Deep-Learning-In-Computer-Vision/blob/main/ADLiCV_Poster___Exam_Variant%20(2).pdf)
+![poster](https://github.com/jakwisn/DTU-Advanced-Deep-Learning-In-Computer-Vision/blob/main/ADLiCV_Poster.png)
 
 ## Week 1 
 * [X] create dataloader 
