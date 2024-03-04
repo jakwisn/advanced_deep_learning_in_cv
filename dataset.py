@@ -5,7 +5,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import cv2
-import albumentations as A 
+import albumentations as A
+import scipy
 
 class CorrectionImageDataset(Dataset):
     def __init__(self, file_list, train=True,transform=None):
@@ -29,6 +30,11 @@ class CorrectionImageDataset(Dataset):
         transform = A.RandomBrightnessContrast(p=1, brightness_limit=(0.2,0.2), contrast_limit=(0.1,0.1)) # Contrast limit has to be set otherwise it fluctuates
         bright_image = torch.from_numpy(transform(image=image.numpy())['image'])
         mask = torch.mean(bright_image,0) >= 255 / 255
+        #print(mask.shape)
+        # Use dilation operation
+        # expanded_mask = scipy.ndimage.binary_dilation(mask, iterations=3)
+        # expanded_mask = transforms.ToTensor()(expanded_mask).squeeze(0)
+        #print(expanded_mask.shape)
 
         if self.train:
         # return

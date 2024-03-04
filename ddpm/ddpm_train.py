@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from tqdm import tqdm
 from torch import optim
-
+import lpips
 import torchvision
 import logging
 
@@ -64,7 +64,7 @@ def create_result_folders(experiment_name):
     os.makedirs(os.path.join("results", experiment_name), exist_ok=True)
 
 def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
-          batch_size=100, lr=1e-4, num_epochs=30, experiment_name="ddpm", show=False, pretrained=False, metric='mse'):
+          batch_size=100, lr=1e-4, num_epochs=30, experiment_name="ddpm", show=False, pretrained=False, metric='mse', max_steps=None):
     """Implements algrorithm 1 (Training) from the ddpm paper at page 4"""
     create_result_folders(experiment_name)
     
@@ -81,8 +81,8 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
 
     optimizer = optim.AdamW(model.parameters(), lr=lr)
 
-    if metric == 'lpips':
-        loss_func = LearnedPerceptualImagePatchSimilarity()
+    if metric == 'LPIPS':
+        loss_func = lpips.LPIPS(net='alex').to(device)
     elif metric == 'MSE':
         loss_func = torch.nn.MSELoss() # use MSE loss
     else:
@@ -90,7 +90,11 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
 
     logger = SummaryWriter(os.path.join("runs", experiment_name))
     l = len(dataloader)
-    MAX_STEPS = l
+
+    if max_steps is None:
+        MAX_STEPS = l
+    else:
+        MAX_STEPS = max_steps
 
     #scaler = torch.cuda.amp.GradScaler()
 
@@ -121,7 +125,17 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
                 predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
                 unknown_regions = predicted_noise * masks
 
-                loss = loss_func(unknown_regions, noise*masks) # loss between masked noise and masked predicted noise
+                if metric == 'LPIPS':
+                    unknown_regions = unknown_regions.clamp(-1, 1)
+                    #print(unknown_regions.shape)
+                    preds = (noise*masks).clamp(-1, 1)
+                    #print(preds.shape)
+                    images_after_denoising = ((x_t - predicted_noise) * masks).clamp(-1, 1)
+
+                    loss = loss_func(images_after_denoising,  images * masks).flatten().mean()
+
+                else:
+                    loss = loss_func(unknown_regions, noise*masks) # loss between masked noise and masked predicted noise
 
                 # print(t[0].detach().cpu().numpy())
                 # fig, axs = plt.subplots(1, 3)
@@ -136,7 +150,7 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
                 optimizer.step()
 
                 pbar.set_postfix(loss_func=loss.item())
-                logger.add_scalar(metric, loss.item(), global_step=epoch * l + i)
+                logger.add_scalar(metric, loss.item(), global_step=epoch * MAX_STEPS + i)
 
                 if i >= MAX_STEPS:
                     break
