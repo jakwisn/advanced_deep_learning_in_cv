@@ -5,10 +5,14 @@ from PIL import Image
 import random
 import torch
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from tqdm import tqdm
 from torch import optim
+import lpips
+import torchvision
 import logging
+
+
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -60,7 +64,7 @@ def create_result_folders(experiment_name):
     os.makedirs(os.path.join("results", experiment_name), exist_ok=True)
 
 def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
-          batch_size=100, lr=1e-3, num_epochs=30, experiment_name="ddpm", show=False):
+          batch_size=100, lr=1e-4, num_epochs=30, experiment_name="ddpm", show=False, pretrained=False, metric='mse', max_steps=None):
     """Implements algrorithm 1 (Training) from the ddpm paper at page 4"""
     create_result_folders(experiment_name)
     
@@ -70,59 +74,101 @@ def train(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_cha
     model = UNet(img_size=img_size, c_in=input_channels, c_out=input_channels, 
                  time_dim=time_dim,channels=channels, device=device).to(device)
     diffusion = Diffusion(img_size=img_size, T=T, beta_start=1e-4, beta_end=0.02, device=device)
-    
-    ckpt = torch.load("checkpoints/unconditional_ckpt.pt")
-    model.load_state_dict(ckpt)
+
+    if pretrained:
+        ckpt = torch.load("checkpoints/unconditional_ckpt.pt")
+        model.load_state_dict(ckpt)
+
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    mse = torch.nn.MSELoss() # use MSE loss 
-    
+
+    if metric == 'LPIPS':
+        loss_func = lpips.LPIPS(net='alex').to(device)
+    elif metric == 'MSE':
+        loss_func = torch.nn.MSELoss() # use MSE loss
+    else:
+        raise ValueError(f'Invalid metric: {metric}')
+
     logger = SummaryWriter(os.path.join("runs", experiment_name))
     l = len(dataloader)
 
+    if max_steps is None:
+        MAX_STEPS = l
+    else:
+        MAX_STEPS = max_steps
+
+    #scaler = torch.cuda.amp.GradScaler()
+
     for epoch in range(1, num_epochs + 1):
         logging.info(f"Starting epoch {epoch}:")
-        pbar = tqdm(dataloader)
+        pbar = tqdm(dataloader, total=MAX_STEPS)
 
         with torch.enable_grad():
+            model.train()
             for i, (images, masks) in enumerate(pbar):
                 images = images.to(device)
                 masks = masks.to(device).unsqueeze(1)
 
                 t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
 
+
                 # q sample does is done just like before
                 x_t, noise = diffusion.q_sample(images, t)
 
-                known_regions = x_t * ~masks
-                x_p = diffusion.p_sample(model, x_t, t)
+                #known_regions = x_t * ~masks
+                #x_t_prev = diffusion.p_sample(model, x_t, t)
 
-                unknown_regions = x_p * masks
 
-                x_t = known_regions + unknown_regions
+                #x_t = known_regions + unknown_regions
+
+                # masked_added_noise = (x_t_prev - x_t) * masks
 
                 predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
                 unknown_regions = predicted_noise * masks
 
-                loss = mse(noise*masks, unknown_regions) # loss between masked noise and masked predicted noise
+                if metric == 'LPIPS':
+                    unknown_regions = unknown_regions.clamp(-1, 1)
+                    #print(unknown_regions.shape)
+                    preds = (noise*masks).clamp(-1, 1)
+                    #print(preds.shape)
+                    images_after_denoising = ((x_t - predicted_noise) * masks).clamp(-1, 1)
+
+                    loss = loss_func(images_after_denoising,  images * masks).flatten().mean()
+
+                else:
+                    loss = loss_func(unknown_regions, noise*masks) # loss between masked noise and masked predicted noise
+
+                # print(t[0].detach().cpu().numpy())
+                # fig, axs = plt.subplots(1, 3)
+                # axs[0].imshow(images[0].cpu().permute((1, 2, 0)))
+                # axs[1].imshow(masks[0].cpu().squeeze(0))  # Unknown region to generate
+                # axs[2].imshow(x_t[0].permute((1, 2, 0)).detach().cpu().numpy() - predicted_noise[0].permute((1, 2, 0)).detach().cpu().numpy())  # Input to the UNet
+                # plt.show()
+                # plt.close(fig)
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                pbar.set_postfix(MSE=loss.item())
-                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
-             
-        with torch.no_grad():
-            pbar = tqdm(valdataloader)
-            for i, (images, masks) in enumerate(pbar):
-                images = images.to(device)
-                masks = masks.to(device)
-            sampled_images = diffusion.p_sample_loop(images, masks, model,  batch_size=images.shape[0])
-            save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
-                        show=show, title=f'Epoch {epoch}')
+                pbar.set_postfix(loss_func=loss.item())
+                logger.add_scalar(metric, loss.item(), global_step=epoch * MAX_STEPS + i)
 
-        torch.save(model.state_dict(), os.path.join("models", experiment_name, f"weights-{epoch}.pt"))
+                if i >= MAX_STEPS:
+                    break
 
+        if (epoch-1) % 5 == 0:
+            with torch.no_grad():
+                model.eval()
+                pbar = tqdm(valdataloader)
+                for i, (images, masks) in enumerate(pbar):
+                    images = images.to(device)
+                    masks = masks.to(device).unsqueeze(1)
+
+                sampled_images = diffusion.p_sample_loop(images, masks, model,  batch_size=images.shape[0])
+                save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
+                            show=show, title=f'Epoch {epoch}')
+                torch.save(model.state_dict(), os.path.join("models", experiment_name, f"weights-{epoch}.pt"))
+
+    torch.save(model.state_dict(), os.path.join("models", experiment_name, f"weights-{epoch}.pt"))
 
 def train_profiler(dataloader, valdataloader, device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_dim=256,
           batch_size=100, lr=1e-3, num_epochs=30, experiment_name="ddpm", show=False):

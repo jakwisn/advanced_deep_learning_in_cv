@@ -112,12 +112,12 @@ class Diffusion:
             for i in tqdm(reversed(range(1, self.T)), position=0, total=self.T-1):
                 t = (torch.ones(batch_size) * i).long().to(self.device)
 
-                known, _ = self.q_sample(images, t)
-                knonw_regions = known * ~ masks.unsqueeze(1)
+                known, _ = self.q_sample(images * ~ masks, t)
+                knonw_regions = known * ~ masks
 
 
                 x = self.p_sample(model, x, t) # sample from p(x_{t-1} | x_t) - here the previous iteration goes
-                unknown_regions = x * masks.unsqueeze(1)  # mask the image and add the known regions
+                unknown_regions = x * masks  # mask the image and add the known regions
                 x = knonw_regions + unknown_regions # add the known regions to the unknown regions
 
 
@@ -127,8 +127,8 @@ class Diffusion:
                     intermediates.append(x_itermediate)
 
         model.train()
-        x = (x.clamp(-1, 1) + 1) / 2
-        x = (x * 255).type(torch.uint8)
+        # x = (x.clamp(-1, 1) + 1) / 2
+        # x = (x * 255).type(torch.uint8)
 
         if timesteps_to_save is not None:
             intermediates.append(x)
